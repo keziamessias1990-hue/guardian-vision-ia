@@ -143,3 +143,5 @@ Nesta Sprint 0 os apps mostram **dados demonstrativos locais** e **não precisam
 
 ## Segurança e privacidade
 Sem contas reais, sem persistência de dados infantis, sem leitura de chats externos, sem cobrança real. A análise de demonstração é uma regra local ilustrativa, **não é um detector validado de grooming**. Revisão jurídica, RIPD e políticas das lojas continuam como bloqueios para testes com dados reais e publicação comercial.
+
+End
