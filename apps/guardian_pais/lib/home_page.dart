@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 
+import 'services/api_service.dart';
+
 // Guardian Vision Pais - Home demonstrativa.
-// Sem dependencias externas, backend ou coleta automatica de mensagens.
+// Os dados da API são usados quando o backend estiver disponível; o app continua
+// funcionando em modo demonstrativo quando a API não responder.
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
@@ -17,6 +20,9 @@ class _HomePageState extends State<HomePage> {
   static const Color green = Color(0xFF179B74);
 
   final TextEditingController _controller = TextEditingController();
+  final List<ApiChild> _apiChildren = <ApiChild>[];
+  final List<ApiAlert> _apiAlerts = <ApiAlert>[];
+  bool _loadingDashboard = true;
   int _selectedTab = 0;
   bool _showDemoAlert = false;
   String _result = 'Nenhuma mensagem fictícia analisada nesta sessão.';
@@ -25,6 +31,31 @@ class _HomePageState extends State<HomePage> {
   bool _hasRisk = false;
   bool _migration = false;
   bool _contested = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDashboard();
+  }
+
+  Future<void> _loadDashboard() async {
+    try {
+      final snapshot = await ApiService.fetchDashboard();
+      if (!mounted) return;
+      setState(() {
+        _apiChildren
+          ..clear()
+          ..addAll(snapshot.children);
+        _apiAlerts
+          ..clear()
+          ..addAll(snapshot.alerts);
+        _loadingDashboard = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loadingDashboard = false);
+    }
+  }
 
   void _analyze() {
     final text = _controller.text.trim().toLowerCase();
@@ -127,9 +158,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _triggerDemoAlert() {
-    setState(() {
-      _showDemoAlert = true;
-    });
+    setState(() => _showDemoAlert = true);
   }
 
   void _navigateToAlerts() {
@@ -281,15 +310,15 @@ class _HomePageState extends State<HomePage> {
             Row(
               children: [
                 Expanded(
-                  child: _metric(Icons.notifications_active_outlined, '0', 'Alertas', Colors.orange),
+                  child: _metric(Icons.notifications_active_outlined, _loadingDashboard ? '…' : '${_apiAlerts.length}', 'Alertas', Colors.orange),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: _metric(Icons.fact_check_outlined, '0', 'Análises recebidas', blue),
+                  child: _metric(Icons.fact_check_outlined, _loadingDashboard ? '…' : '${_apiAlerts.length}', 'Análises recebidas', blue),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: _metric(Icons.people_outline, '0', 'Crianças vinculadas', green),
+                  child: _metric(Icons.people_outline, _loadingDashboard ? '…' : '${_apiChildren.length}', 'Crianças vinculadas', green),
                 ),
               ],
             ),
@@ -297,38 +326,83 @@ class _HomePageState extends State<HomePage> {
             _section('Seus filhos', 'Adicionar criança', _showAddChildDialog),
             const SizedBox(height: 10),
             _surface(
-              child: Row(
-                children: [
-                  _circleIcon(Icons.person_add_alt_1_rounded, const Color(0xFFE6F0FF), blue),
-                  const SizedBox(width: 12),
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Nenhuma criança vinculada',
-                          style: TextStyle(fontWeight: FontWeight.w700, color: navy),
-                        ),
-                        SizedBox(height: 4),
-                        Text(
-                          'Adicione uma criança para começar.',
-                          style: TextStyle(color: muted, fontSize: 12),
-                        ),
-                      ],
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: _showAddChildDialog,
-                    child: const Text('Adicionar criança'),
-                  ),
-                ],
-              ),
+              child: _loadingDashboard
+                  ? const Center(child: CircularProgressIndicator())
+                  : (_apiChildren.isEmpty
+                      ? Row(
+                          children: [
+                            _circleIcon(Icons.person_add_alt_1_rounded, const Color(0xFFE6F0FF), blue),
+                            const SizedBox(width: 12),
+                            const Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Nenhuma criança vinculada',
+                                    style: TextStyle(fontWeight: FontWeight.w700, color: navy),
+                                  ),
+                                  SizedBox(height: 4),
+                                  Text(
+                                    'Adicione uma criança para começar.',
+                                    style: TextStyle(color: muted, fontSize: 12),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: _showAddChildDialog,
+                              child: const Text('Adicionar criança'),
+                            ),
+                          ],
+                        )
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            for (final child in _apiChildren)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: Row(
+                                  children: [
+                                    _circleIcon(Icons.person_rounded, const Color(0xFFE6F0FF), blue),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            child.name,
+                                            style: const TextStyle(fontWeight: FontWeight.w700, color: navy),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            'Faixa etária: ${child.ageGroup}',
+                                            style: const TextStyle(color: muted, fontSize: 12),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Chip(
+                                      label: Text(child.status == 'linked' ? 'Vinculada' : 'Pendente'),
+                                      backgroundColor: child.status == 'linked' ? const Color(0xFFE7F8F1) : const Color(0xFFFFF2DD),
+                                      labelStyle: TextStyle(
+                                        color: child.status == 'linked' ? const Color(0xFF159768) : const Color(0xFFB97912),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                          ],
+                        )),
             ),
             const SizedBox(height: 24),
             _section('Alertas e orientações', 'Ver todos', _navigateToAlerts),
             const SizedBox(height: 10),
             if (_showDemoAlert)
               _demoAlertCard()
+            else if (_loadingDashboard)
+              const Center(child: CircularProgressIndicator())
+            else if (_apiAlerts.isNotEmpty)
+              _apiAlertCard(_apiAlerts.first)
             else
               _surface(
                 child: Row(
@@ -340,6 +414,7 @@ class _HomePageState extends State<HomePage> {
                       ),
                     ),
                     TextButton.icon(
+                      key: const ValueKey('explore_demo_button'),
                       onPressed: _triggerDemoAlert,
                       icon: const Icon(Icons.preview_rounded),
                       label: const Text('Explorar demonstração'),
@@ -476,6 +551,7 @@ class _HomePageState extends State<HomePage> {
             SizedBox(
               width: double.infinity,
               child: FilledButton(
+                key: const ValueKey('pairing_button'),
                 onPressed: _showPairingDialog,
                 style: FilledButton.styleFrom(
                   backgroundColor: blue,
@@ -586,6 +662,88 @@ class _HomePageState extends State<HomePage> {
           ],
         ),
       );
+
+  Widget _apiAlertCard(ApiAlert alert) => Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFEFF0),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: const Color(0xFFFFCCD0)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.warning_amber_rounded, color: Color(0xFFCE3142)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    alert.category == 'secret-sharing' ? 'Possível sinal de risco' : 'Alerta da criança',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFFA91F32),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                Chip(
+                  label: Text(_alertTagLabel(alert.category)),
+                  backgroundColor: const Color(0xFFEEE3FF),
+                  labelStyle: const TextStyle(color: Color(0xFF5D2CA5)),
+                ),
+                if (alert.severity.isNotEmpty)
+                  Chip(
+                    label: Text(alert.severity.toUpperCase()),
+                    backgroundColor: const Color(0xFFEFF7FF),
+                    labelStyle: const TextStyle(color: Color(0xFF1B5EA8)),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              alert.summary,
+              style: const TextStyle(fontSize: 13, color: navy, height: 1.4),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                TextButton.icon(
+                  onPressed: _showSafetyGuidanceDialog,
+                  icon: const Icon(Icons.info_outline_rounded),
+                  label: const Text('Ver orientação'),
+                ),
+                const SizedBox(width: 8),
+                TextButton.icon(
+                  onPressed: _navigateToAlerts,
+                  icon: const Icon(Icons.arrow_forward_rounded),
+                  label: const Text('Ver detalhes'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+
+  String _alertTagLabel(String category) {
+    switch (category) {
+      case 'secret-sharing':
+        return 'Pedido de segredo';
+      case 'platform-change':
+        return 'Mudança de plataforma';
+      case 'personal-info':
+        return 'Solicitação de dados pessoais';
+      default:
+        return category.isEmpty ? 'Alerta' : category;
+    }
+  }
 
   Widget _metric(IconData icon, String value, String label, Color color) => _surface(
         padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 7),
@@ -713,6 +871,10 @@ class _HomePageState extends State<HomePage> {
             const SizedBox(height: 18),
             if (_showDemoAlert)
               _demoAlertCard()
+            else if (_loadingDashboard)
+              const Center(child: CircularProgressIndicator())
+            else if (_apiAlerts.isNotEmpty)
+              _apiAlertCard(_apiAlerts.first)
             else
               _surface(
                 child: Column(

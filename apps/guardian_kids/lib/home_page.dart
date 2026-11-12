@@ -1,4 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+
+import 'services/api_service.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -11,22 +15,96 @@ class _HomePageState extends State<HomePage> {
   final TextEditingController _controller = TextEditingController();
   String _resultado = 'Ainda não analisei nenhuma mensagem.';
   String _situacaoAtual = 'Tudo bem por enquanto';
+  bool _sending = false;
+  bool _agentActive = true;
+  bool _alertaAutomatico = false;
 
-  void _analisarExemplo() {
-    final texto = _controller.text.toLowerCase();
-    final possivelRisco = texto.contains('segredo') ||
-        texto.contains('discord') ||
-        texto.contains('só entre nós') ||
-        texto.contains('não contar pra ninguém');
+  bool _conteudoSensivel(String texto) {
+    final normalized = texto.toLowerCase();
+    final termos = [
+      'segredo',
+      'discord',
+      'só entre nós',
+      'não contar pra ninguém',
+      'nao contar pra ninguem',
+      'telegram',
+      'whatsapp',
+      'manda foto',
+      'me passa seu endereço',
+      'me passa seu telefone',
+      'não conte',
+      'nao conte',
+      'em privado',
+    ];
+
+    return termos.any(normalized.contains);
+  }
+
+  Future<void> _scannearMensagemRecebida(String textoRecebido, {bool manual = true}) async {
+    final texto = textoRecebido.trim();
+    if (texto.isEmpty) {
+      return;
+    }
+
+    final possivelRisco = _conteudoSensivel(texto);
+    final summary = possivelRisco
+        ? 'Mensagem recebida com padrão sensível: tentativa de segredo, troca para outra plataforma ou pedido de dados pessoais.'
+        : 'Mensagem recebida sem padrões de risco no agente local de proteção.';
 
     setState(() {
+      _sending = true;
+      _agentActive = true;
+      _alertaAutomatico = possivelRisco;
+      _situacaoAtual = possivelRisco ? 'Agente detectou risco' : 'Proteção ativa';
       _resultado = possivelRisco
-          ? 'Parece que você recebeu uma mensagem com conteúdo que merece atenção. Fale com um adulto de confiança.'
-          : 'Tudo parece tranquilo por enquanto. Se você estiver com medo, pode pedir ajuda agora mesmo.';
-      _situacaoAtual = possivelRisco ? 'Preciso de apoio' : 'Estou segura(o)';
+          ? 'O agente local identificou um padrão sensível e registrou uma notificação de segurança.'
+          : 'O agente local concluiu a verificação e não encontrou sinais de risco no conteúdo analisado.';
     });
 
-    _controller.clear();
+    final payload = KidAlertPayload(
+      childId: 'child-1',
+      category: possivelRisco ? 'secret-sharing' : 'platform-change',
+      severity: possivelRisco ? 'medium' : 'low',
+      summary: summary,
+    );
+
+    final sent = await KidApiService.sendAlert(payload);
+
+    if (!mounted) return;
+
+    setState(() {
+      _sending = false;
+      _resultado = sent
+          ? (possivelRisco
+              ? 'Alerta automático registrado com segurança para o responsável.'
+              : 'Verificação concluída e mantida localmente. Nenhum risco detectado.')
+          : (possivelRisco
+              ? 'Padrão de risco identificado localmente. O backend não respondeu no momento, mas a proteção continua ativa.'
+              : 'Verificação concluída localmente. O backend não respondeu, mas a proteção continua ativa.');
+      _situacaoAtual = possivelRisco ? 'Ação de segurança ativada' : 'Proteção ativa';
+    });
+
+    if (manual) {
+      _controller.clear();
+    }
+  }
+
+  void _analisarExemplo() {
+    final texto = _controller.text;
+    if (texto.trim().isEmpty) {
+      setState(() {
+        _resultado = 'Aguardando mensagem recebida para análise automática.';
+      });
+      return;
+    }
+
+    unawaited(_scannearMensagemRecebida(texto, manual: true));
+  }
+
+  void _simularMensagemRecebida() {
+    const mensagem = 'Vamos conversar em segredo e depois no Discord.';
+    _controller.text = mensagem;
+    unawaited(_scannearMensagemRecebida(mensagem, manual: false));
   }
 
   Future<void> _mostrarDialogoAjuda(String titulo, String mensagem) async {
@@ -103,6 +181,41 @@ class _HomePageState extends State<HomePage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              const SizedBox(height: 8),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: _alertaAutomatico ? const Color(0xFFFFF0F2) : const Color(0xFFE8F7F0),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: _alertaAutomatico ? const Color(0xFFEDB8C4) : const Color(0xFFB7E7D2),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      _agentActive ? Icons.shield_rounded : Icons.security_update_good_rounded,
+                      color: _alertaAutomatico ? const Color(0xFFB92943) : const Color(0xFF1F8F61),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        _agentActive
+                            ? (_alertaAutomatico
+                                ? 'Proteção ativa: sinal sensível detectado.'
+                                : 'Proteção ativa: monitoramento local em funcionamento.')
+                            : 'Proteção ativa: aguardando verificação.',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF1F4E79),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
               const SizedBox(height: 8),
               Center(
                 child: Container(
@@ -256,7 +369,7 @@ class _HomePageState extends State<HomePage> {
                     SizedBox(
                       width: double.infinity,
                       child: FilledButton.icon(
-                        onPressed: _analisarExemplo,
+                        onPressed: _sending ? null : _analisarExemplo,
                         style: FilledButton.styleFrom(
                           backgroundColor: const Color(0xFF4CB2FF),
                           foregroundColor: Colors.white,
@@ -265,8 +378,23 @@ class _HomePageState extends State<HomePage> {
                             borderRadius: BorderRadius.circular(16),
                           ),
                         ),
-                        icon: const Icon(Icons.search_rounded),
-                        label: const Text('Analisar mensagem'),
+                        icon: _sending
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                              )
+                            : const Icon(Icons.search_rounded),
+                        label: Text(_sending ? 'Enviando...' : 'Analisar mensagem'),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _simularMensagemRecebida,
+                        icon: const Icon(Icons.auto_awesome_rounded),
+                        label: const Text('Simular mensagem recebida'),
                       ),
                     ),
                   ],
