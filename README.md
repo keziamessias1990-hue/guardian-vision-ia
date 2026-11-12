@@ -44,102 +44,148 @@ Se o `flutter doctor` mostrar problemas:
 - instale o **Xcode** + **simulador iOS** para macOS
 - instale **CocoaPods**: `sudo gem install cocoapods`
 
-## 1. API (terminal VS Code)
+## 1. API (backend NestJS)
+
+No terminal do projeto:
+
 ```bash
-cd backend
+cd /Users/keziamessias/guardian-vision-ia/backend
 npm install
 npm run start:dev
 ```
-Abra http://localhost:3000/api/health e espere `{"status":"ok","service":"guardian-api"}`.
+
+Se a porta 3000 estiver ocupada, o backend pode iniciar em `3001`. Neste caso, teste com:
+
+```bash
+curl http://localhost:3001/api/health
+```
+
+Verifique a API local:
+
+```bash
+curl http://localhost:3000/api/health || curl http://localhost:3001/api/health
+```
+
+Resposta esperada:
+
+```json
+{"status":"ok","service":"guardian-api"}
+```
+
+Endpoints principais desta sprint:
+
+```bash
+curl http://localhost:3000/api/parents || curl http://localhost:3001/api/parents
+curl http://localhost:3000/api/children || curl http://localhost:3001/api/children
+curl http://localhost:3000/api/alerts || curl http://localhost:3001/api/alerts
+curl -X POST http://localhost:3000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"mae@guardianvision.local","password":"guardian123"}'
+```
 
 ## 2. App Guardian Pais
+
+No terminal:
+
 ```bash
-cd apps/guardian_pais
+cd /Users/keziamessias/guardian-vision-ia/apps/guardian_pais
 flutter pub get
 flutter analyze
 flutter test
 flutter run
 ```
 
-## 3. App Guardian Kids
-```bash
-cd apps/guardian_kids
-flutter pub get
-flutter analyze
-flutter test
-flutter run
-```
-
-## 4. Gerar as pastas nativas dos aplicativos
-O SDK Flutter gera os projetos Android/iOS no seu computador. Os arquivos `lib/` já estão preparados. **Execute uma vez em cada pasta**:
-
-```bash
-cd apps/guardian_pais
-flutter create --platforms=android,ios --project-name guardian_pais .
-flutter pub get
-flutter run
-```
-
-Em outro terminal:
-
-```bash
-cd apps/guardian_kids
-flutter create --platforms=android,ios --project-name guardian_kids .
-flutter pub get
-flutter run
-```
-
-Se quiser escolher o dispositivo manualmente:
+Se quiser rodar em um emulador iOS ou Android específico:
 
 ```bash
 flutter devices
 flutter run -d "iPhone 17 Pro"
-# ou use o device id retornado por flutter devices
+flutter run -d emulator-5554
 ```
 
-Para abrir o simulador iOS no macOS:
+## 3. App Guardian Kids
+
+No terminal:
 
 ```bash
-open -a Simulator
+cd /Users/keziamessias/guardian-vision-ia/apps/guardian_kids
+flutter pub get
+flutter analyze
+flutter test
+flutter run
 ```
 
-Para Android emulador:
+Para abrir em um simulador concreto:
 
 ```bash
-flutter emulators
-flutter emulators --launch <id_do_emulador>
+flutter devices
+flutter run -d "iPhone 17 Pro"
 ```
 
-Para listar os dispositivos: `flutter devices`. Para Android emulador, use `flutter emulators` e `flutter emulators --launch <id>`.
+## 4. Testes do backend
 
-> **Importante:** o comando `flutter create` gera os diretórios `android/` e `ios/`, que não acompanham este ZIP porque o Flutter SDK não está instalado no ambiente de geração. Ele preserva os arquivos existentes em `lib/`. Se o Flutter perguntar sobre sobrescrita, não substitua os arquivos Dart deste projeto.
-
-## 5. Testes
 ```bash
-cd backend && npm test
-cd apps/guardian_pais && flutter test
-cd apps/guardian_kids && flutter test
+cd /Users/keziamessias/guardian-vision-ia/backend
+npm test
 ```
 
-## 6. Verificação rápida do projeto
+## 5. Testes dos apps Flutter
+
 ```bash
-cd apps/guardian_pais && flutter analyze && flutter test && flutter run
-cd apps/guardian_kids && flutter analyze && flutter test && flutter run
+cd /Users/keziamessias/guardian-vision-ia/apps/guardian_pais
+flutter test
+
+cd /Users/keziamessias/guardian-vision-ia/apps/guardian_kids
+flutter test
 ```
 
-## Endereços para integração futura
-- Android Emulator → backend no host: `http://10.0.2.2:3000`
-- iOS Simulator → backend no host: `http://localhost:3000`
-- Dispositivo físico → IP local do computador (somente em rede de desenvolvimento)
+## 6. Fluxo completo de execução (ordem recomendada)
 
-Nesta Sprint 0 os apps mostram **dados demonstrativos locais** e **não precisam da API para abrir**. A integração autenticada será feita nas próximas sprints.
+Abra 3 terminais:
+
+Terminal 1 — backend:
+
+```bash
+cd /Users/keziamessias/guardian-vision-ia/backend
+npm install
+PORT=3001 npm run start:dev
+```
+
+Terminal 2 — app Guardian Pais:
+
+```bash
+cd /Users/keziamessias/guardian-vision-ia/apps/guardian_pais
+flutter pub get
+flutter run -d "iPhone 17 Pro"
+```
+
+Terminal 3 — app Guardian Kids:
+
+```bash
+cd /Users/keziamessias/guardian-vision-ia/apps/guardian_kids
+flutter pub get
+flutter run -d "iPhone 17 Pro"
+```
+
+## 7. Endereços úteis para integração local
+
+- Android Emulator → backend: `http://10.0.2.2:3000/api` ou `http://10.0.2.2:3001/api`
+- iOS Simulator → backend: `http://localhost:3000/api` ou `http://localhost:3001/api`
+- Dispositivo físico → use o IP do notebook/PC na rede local
+
+## 8. Observações de segurança e privacidade
+
+- O projeto continua em fase de protótipo.
+- Não deve haver coleta automática de conversas externas.
+- O app só deve consumir eventos estruturados e mínimos do backend.
+- Ainda não há autenticação real, persistência de dados infantis ou integração com lojas.
 
 ## Organização
-- `apps/guardian_pais`: tela inicial e navegação demonstrativa
-- `apps/guardian_kids`: tela inicial, análise simulada de mensagem fictícia e ajuda
-- `backend`: NestJS, `/api/health` e testes básicos
-- `admin_web`: reservado para Next.js, sem instalação nesta etapa
-- `docs`: decisões, limites e backlog
+- `apps/guardian_pais`: app parental com dashboard e integração inicial com a API
+- `apps/guardian_kids`: app da criança em fluxo de demonstração
+- `backend`: API NestJS com contrato local inicial e testes
+- `admin_web`: espaço reservado para painel administrativo
+- `docs`: documentação e roteiro de desenvolvimento
 
 ## Segurança e privacidade
 Sem contas reais, sem persistência de dados infantis, sem leitura de chats externos, sem cobrança real. A análise de demonstração é uma regra local ilustrativa, **não é um detector validado de grooming**. Revisão jurídica, RIPD e políticas das lojas continuam como bloqueios para testes com dados reais e publicação comercial.
