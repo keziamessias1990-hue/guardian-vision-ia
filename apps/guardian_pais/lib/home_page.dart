@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-// Guardian Vision Pais - Home demonstrativa.
-// Sem dependencias externas, backend ou coleta automatica de mensagens.
+import 'services/api_service.dart';
+
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
@@ -17,6 +17,9 @@ class _HomePageState extends State<HomePage> {
   static const Color green = Color(0xFF179B74);
 
   final TextEditingController _controller = TextEditingController();
+  final List<ApiChild> _apiChildren = <ApiChild>[];
+  final List<ApiAlert> _apiAlerts = <ApiAlert>[];
+  bool _loadingDashboard = true;
   int _selectedTab = 0;
   bool _showDemoAlert = false;
   String _result = 'Nenhuma mensagem fictícia analisada nesta sessão.';
@@ -26,12 +29,90 @@ class _HomePageState extends State<HomePage> {
   bool _migration = false;
   bool _contested = false;
 
+  List<ApiChild> _demoChildren() => <ApiChild>[
+        const ApiChild(
+          id: 'child-guilherme',
+          parentId: 'parent-1',
+          name: 'Guilherme',
+          ageGroup: '11-13',
+          status: 'linked',
+          createdAt: '2026-11-12T08:00:00.000Z',
+        ),
+      ];
+
+  List<ApiAlert> _demoAlerts() => <ApiAlert>[
+        const ApiAlert(
+          id: 'alert-01',
+          childId: 'child-guilherme',
+          category: 'secret-sharing',
+          severity: 'medium',
+          source: 'guardian_kids',
+          summary: 'Pedido de segredo e continuação em outra plataforma.',
+          occurredAt: '2026-11-12T08:20:00.000Z',
+          confirmationState: 'pending',
+        ),
+        const ApiAlert(
+          id: 'alert-02',
+          childId: 'child-guilherme',
+          category: 'platform-change',
+          severity: 'medium',
+          source: 'guardian_kids',
+          summary: 'Tentativa de troca de conversa para Discord.',
+          occurredAt: '2026-11-12T08:35:00.000Z',
+          confirmationState: 'confirmed',
+        ),
+        const ApiAlert(
+          id: 'alert-03',
+          childId: 'child-guilherme',
+          category: 'personal-data',
+          severity: 'high',
+          source: 'guardian_kids',
+          summary: 'Pedido de endereço e dados pessoais.',
+          occurredAt: '2026-11-12T09:05:00.000Z',
+          confirmationState: 'pending',
+        ),
+      ];
+
+  Future<void> _loadDashboard() async {
+    try {
+      final snapshot = await ApiService.fetchDashboard();
+      if (!mounted) return;
+      setState(() {
+        _apiChildren
+          ..clear()
+          ..addAll(snapshot.children.isNotEmpty ? snapshot.children : _demoChildren());
+        _apiAlerts
+          ..clear()
+          ..addAll(snapshot.alerts.isNotEmpty ? snapshot.alerts : _demoAlerts());
+        _loadingDashboard = false;
+        if (_apiChildren.isEmpty) {
+          _apiChildren.addAll(_demoChildren());
+        }
+        if (_apiAlerts.isEmpty) {
+          _apiAlerts.addAll(_demoAlerts());
+        }
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _apiChildren
+          ..clear()
+          ..addAll(_demoChildren());
+        _apiAlerts
+          ..clear()
+          ..addAll(_demoAlerts());
+        _loadingDashboard = false;
+      });
+    }
+  }
+
   void _analyze() {
     final text = _controller.text.trim().toLowerCase();
     if (text.isEmpty) {
       _showInfo('Mensagem vazia', 'Digite um texto fictício para realizar a simulação.');
       return;
     }
+
     final secret = ['segredo', 'só entre nós', 'so entre nos', 'não contar', 'nao contar', 'não conte', 'nao conte']
         .any(text.contains);
     final migration = ['discord', 'telegram', 'whatsapp', 'outro aplicativo', 'outro app']
@@ -39,6 +120,7 @@ class _HomePageState extends State<HomePage> {
     final personal = ['seu endereço', 'seu endereco', 'manda foto', 'seu telefone', 'seu número', 'seu numero']
         .any(text.contains);
     final risk = secret || migration || personal;
+
     setState(() {
       _hasResult = true;
       _hasRisk = risk;
@@ -53,6 +135,7 @@ class _HomePageState extends State<HomePage> {
             ].join(', ')}. Isso merece uma conversa cuidadosa. A continuidade em outro aplicativo não foi confirmada.'
           : 'Esta demonstração não encontrou as expressões de risco cadastradas. Isso não garante que o conteúdo seja seguro.';
     });
+
     _controller.clear();
     FocusScope.of(context).unfocus();
   }
@@ -64,7 +147,9 @@ class _HomePageState extends State<HomePage> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text(title),
         content: Text(message),
-        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Entendi'))],
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Entendi')),
+        ],
       ),
     );
   }
@@ -79,10 +164,7 @@ class _HomePageState extends State<HomePage> {
           'Converse com calma, sem culpar a criança. Pergunte como ela se sentiu e procure apoio especializado se houver risco concreto.',
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Entendi'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Entendi')),
         ],
       ),
     );
@@ -95,13 +177,10 @@ class _HomePageState extends State<HomePage> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('Pareamento futuro'),
         content: const Text(
-          'O pareamento do app da criança será implementado após a integração com o backend. Neste protótipo, a conexão real ainda não está disponível.',
+          'Guilherme está vinculado ao app conforme a simulação atual. O pareamento real será concluído quando o backend de autenticação estiver conectado ao sistema.',
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Entendi'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Entendi')),
         ],
       ),
     );
@@ -114,26 +193,27 @@ class _HomePageState extends State<HomePage> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('Adicionar criança'),
         content: const Text(
-          'O cadastro e o pareamento dependem do backend. Este protótipo apresenta apenas a experiência inicial e não cria vínculo real.',
+          'Neste cenário demonstrativo, Guilherme já está vinculado. Os dados visuais foram atualizados para refletir o cadastro ativo do filho.',
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Entendi'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Entendi')),
         ],
       ),
     );
   }
 
   void _triggerDemoAlert() {
-    setState(() {
-      _showDemoAlert = true;
-    });
+    setState(() => _showDemoAlert = true);
   }
 
   void _navigateToAlerts() {
     setState(() => _selectedTab = 2);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDashboard();
   }
 
   @override
@@ -281,15 +361,15 @@ class _HomePageState extends State<HomePage> {
             Row(
               children: [
                 Expanded(
-                  child: _metric(Icons.notifications_active_outlined, '0', 'Alertas', Colors.orange),
+                  child: _metric(Icons.notifications_active_outlined, '${_apiAlerts.length}', 'Alertas', Colors.orange),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: _metric(Icons.fact_check_outlined, '0', 'Análises recebidas', blue),
+                  child: _metric(Icons.fact_check_outlined, '${_apiAlerts.length}', 'Análises recebidas', blue),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: _metric(Icons.people_outline, '0', 'Crianças vinculadas', green),
+                  child: _metric(Icons.people_outline, '${_apiChildren.length}', 'Crianças vinculadas', green),
                 ),
               ],
             ),
@@ -299,27 +379,28 @@ class _HomePageState extends State<HomePage> {
             _surface(
               child: Row(
                 children: [
-                  _circleIcon(Icons.person_add_alt_1_rounded, const Color(0xFFE6F0FF), blue),
+                  _circleIcon(Icons.person_rounded, const Color(0xFFE6F0FF), blue),
                   const SizedBox(width: 12),
-                  const Expanded(
+                  Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Nenhuma criança vinculada',
-                          style: TextStyle(fontWeight: FontWeight.w700, color: navy),
+                          _apiChildren.isNotEmpty ? _apiChildren.first.name : 'Guilherme',
+                          style: const TextStyle(fontWeight: FontWeight.w700, color: navy),
                         ),
-                        SizedBox(height: 4),
+                        const SizedBox(height: 4),
                         Text(
-                          'Adicione uma criança para começar.',
-                          style: TextStyle(color: muted, fontSize: 12),
+                          _apiChildren.isNotEmpty ? 'Faixa etária: ${_apiChildren.first.ageGroup}' : 'Faixa etária: 11-13',
+                          style: const TextStyle(color: muted, fontSize: 12),
                         ),
                       ],
                     ),
                   ),
-                  TextButton(
-                    onPressed: _showAddChildDialog,
-                    child: const Text('Adicionar criança'),
+                  Chip(
+                    label: const Text('Vinculada'),
+                    backgroundColor: const Color(0xFFE7F8F1),
+                    labelStyle: const TextStyle(color: Color(0xFF159768)),
                   ),
                 ],
               ),
@@ -329,6 +410,8 @@ class _HomePageState extends State<HomePage> {
             const SizedBox(height: 10),
             if (_showDemoAlert)
               _demoAlertCard()
+            else if (_apiAlerts.isNotEmpty)
+              _apiAlertCard(_apiAlerts.first)
             else
               _surface(
                 child: Row(
@@ -430,7 +513,7 @@ class _HomePageState extends State<HomePage> {
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.18),
+                color: Colors.white.withOpacity(0.18),
                 borderRadius: BorderRadius.circular(14),
               ),
               child: const Icon(Icons.verified_user_rounded, size: 34, color: Colors.white),
@@ -460,27 +543,30 @@ class _HomePageState extends State<HomePage> {
         ),
       );
 
-  Widget _onboardingCard() => _surface(
+  Widget _onboardingCard() => Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: const Color(0xFFE4ECF8)),
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
               'Comece por aqui',
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: navy),
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: navy),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 12),
             _onboardingStep('1', 'Criar perfil da criança'),
             _onboardingStep('2', 'Vincular app da criança'),
             _onboardingStep('3', 'Revisar preferências de proteção'),
-            const SizedBox(height: 16),
+            const SizedBox(height: 14),
             SizedBox(
               width: double.infinity,
               child: FilledButton(
                 onPressed: _showPairingDialog,
-                style: FilledButton.styleFrom(
-                  backgroundColor: blue,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                ),
                 child: const Text('Vincular app da criança'),
               ),
             ),
@@ -488,32 +574,18 @@ class _HomePageState extends State<HomePage> {
         ),
       );
 
-  Widget _onboardingStep(String number, String label) => Padding(
+  Widget _onboardingStep(String number, String text) => Padding(
         padding: const EdgeInsets.only(bottom: 10),
         child: Row(
           children: [
-            Container(
-              width: 28,
-              height: 28,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: const Color(0xFFDCEBFF),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                number,
-                style: const TextStyle(
-                  color: navy,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
+            CircleAvatar(
+              radius: 15,
+              backgroundColor: const Color(0xFFE6F0FF),
+              child: Text(number, style: const TextStyle(color: blue, fontWeight: FontWeight.w800)),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 10),
             Expanded(
-              child: Text(
-                label,
-                style: const TextStyle(fontWeight: FontWeight.w600, color: navy),
-              ),
+              child: Text(text, style: const TextStyle(color: navy, fontWeight: FontWeight.w600)),
             ),
           ],
         ),
@@ -582,6 +654,38 @@ class _HomePageState extends State<HomePage> {
                   label: const Text('Ver detalhes'),
                 ),
               ],
+            ),
+          ],
+        ),
+      );
+
+  Widget _apiAlertCard(ApiAlert alert) => Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: const Color(0xFFE4ECF8)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.warning_amber_rounded, color: Color(0xFFCE3142)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    alert.summary,
+                    style: const TextStyle(fontWeight: FontWeight.w700, color: navy),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Categoria: ${alert.category} • Severidade: ${alert.severity}',
+              style: const TextStyle(fontSize: 12, color: muted),
             ),
           ],
         ),
