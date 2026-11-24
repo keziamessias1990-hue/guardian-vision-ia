@@ -1,0 +1,14 @@
+appId: com.example.guardian_pais.${APP_SUFFIX}
+name: Abrir Guardian Pais e Guardian Kids
+---
+- launchApp:
+    stopApp: true
+    clearState: false
+- assertVisible: "Guardian Vision"
+- assertVisible: "Guardian Vision IA"
+- launchApp:
+    appId: com.example.guardian_kids.${APP_SUFFIX}
+    stopApp: true
+    clearState: false
+- assertVisible: "Guardian Kids"
+- assertVisible: "Seu espaço seguro e acolhedor"
