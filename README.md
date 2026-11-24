@@ -4,7 +4,9 @@ Monorepositório do Guardian Pais, do Guardian Kids e da API NestJS. Esta versã
 
 ## Executar com um comando
 
-Abra um terminal na raiz do projeto, no Windows ou no macOS, e execute `node scripts/testar-guardian.cjs`. Para validar o fluxo completo com uma notificação fictícia no Android, use `node scripts/testar-guardian.cjs --e2e`. [Preparação e modos de teste](scripts/README.md)
+No Windows, abra o PowerShell na pasta `scripts` e execute `.\preparar-windows.cmd` para configurar a máquina e abrir os apps. Para o teste de ponta a ponta desde a instalação, use `.\preparar-windows.cmd -Modo e2e`.
+
+Se a máquina já estiver preparada, abra um terminal na raiz do projeto e execute `node scripts/testar-guardian.cjs`. Para validar o fluxo completo com uma notificação fictícia no Android, use `node scripts/testar-guardian.cjs --e2e`. [Preparação e modos de teste](scripts/README.md)
 
 ## Pré-requisitos
 - Flutter SDK estável instalado e no PATH (`flutter doctor`)

@@ -2,7 +2,25 @@
 
 O mesmo comando funciona no PowerShell do Windows e no Terminal do macOS ou Linux. Use a branch `feat/app-pai`. No GitHub, selecione essa branch antes de clicar em **Code → Download ZIP**, ou baixe com Git. Extraia o ZIP antes de abrir o terminal.
 
-## Prepare uma vez
+## Primeira execução no Windows
+
+Em um Windows 10 ou 11 de 64 bits com processador Intel ou AMD, extraia o ZIP, abra o PowerShell na pasta `scripts` e execute:
+
+```powershell
+.\preparar-windows.cmd
+```
+
+O preparador usa o WinGet para instalar Git, Node.js e Android Studio quando necessário. Instala o Flutter 3.47.9 em `%LOCALAPPDATA%\Guardian`, usa o Java do Android Studio, configura o Android SDK, instala a imagem Android 35 e cria o emulador `Guardian_API_35`. Depois chama o mesmo script de exploração. As variáveis das ferramentas são configuradas para a sessão iniciada pelo comando.
+
+- Para preparar e rodar o teste de ponta a ponta, use `.\preparar-windows.cmd -Modo e2e`.
+- Para preparar a máquina sem iniciar o projeto, use `.\preparar-windows.cmd -SoPreparar`.
+- Para rodar os testes de API e Flutter sem emulador, use `.\preparar-windows.cmd -Modo somente-testes`.
+
+Na primeira execução, confirme os avisos dos instaladores e leia e aceite as licenças do SDK quando forem exibidas. Se faltar o WinGet, instale ou atualize o **App Installer** pela Microsoft Store. Se o emulador acusar falta de aceleração, [habilite a virtualização e a Plataforma do Hipervisor do Windows](https://developer.android.com/studio/run/emulator-acceleration), reinicie e rode o mesmo comando.
+
+Se o PowerShell bloquear o arquivo extraído por ter sido baixado da internet, confirme que ele veio do repositório do Guardian, execute `Unblock-File .\preparar-windows.ps1` na pasta `scripts` e rode o preparador novamente. A política de execução do computador permanece como estava.
+
+## Preparação manual no macOS, Linux ou Windows
 
 - Instale Node.js com npm. Use a linha 22 a partir de 22.22.3, ou a linha 24 a partir de 24.15.0, para atender às dependências atuais.
 - Instale Flutter e confirme que `flutter doctor` encontra o Android SDK. Aceite as licenças com `flutter doctor --android-licenses`.
