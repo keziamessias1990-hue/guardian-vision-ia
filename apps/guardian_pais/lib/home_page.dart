@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'services/api_service.dart';
 
@@ -20,6 +22,8 @@ class _HomePageState extends State<HomePage> {
   final List<ApiChild> _apiChildren = <ApiChild>[];
   final List<ApiAlert> _apiAlerts = <ApiAlert>[];
   bool _loadingDashboard = true;
+  String _connection = 'Não autenticado';
+  Timer? _refreshTimer;
   int _selectedTab = 0;
   bool _showDemoAlert = false;
   String _result = 'Nenhuma mensagem fictícia analisada nesta sessão.';
@@ -29,81 +33,157 @@ class _HomePageState extends State<HomePage> {
   bool _migration = false;
   bool _contested = false;
 
-  List<ApiChild> _demoChildren() => <ApiChild>[
-        const ApiChild(
-          id: 'child-guilherme',
-          parentId: 'parent-1',
-          name: 'Guilherme',
-          ageGroup: '11-13',
-          status: 'linked',
-          createdAt: '2026-11-12T08:00:00.000Z',
-        ),
-      ];
-
-  List<ApiAlert> _demoAlerts() => <ApiAlert>[
-        const ApiAlert(
-          id: 'alert-01',
-          childId: 'child-guilherme',
-          category: 'secret-sharing',
-          severity: 'medium',
-          source: 'guardian_kids',
-          summary: 'Pedido de segredo e continuação em outra plataforma.',
-          occurredAt: '2026-11-12T08:20:00.000Z',
-          confirmationState: 'pending',
-        ),
-        const ApiAlert(
-          id: 'alert-02',
-          childId: 'child-guilherme',
-          category: 'platform-change',
-          severity: 'medium',
-          source: 'guardian_kids',
-          summary: 'Tentativa de troca de conversa para Discord.',
-          occurredAt: '2026-11-12T08:35:00.000Z',
-          confirmationState: 'confirmed',
-        ),
-        const ApiAlert(
-          id: 'alert-03',
-          childId: 'child-guilherme',
-          category: 'personal-data',
-          severity: 'high',
-          source: 'guardian_kids',
-          summary: 'Pedido de endereço e dados pessoais.',
-          occurredAt: '2026-11-12T09:05:00.000Z',
-          confirmationState: 'pending',
-        ),
-      ];
-
   Future<void> _loadDashboard() async {
+    final token = ApiService.accessToken;
+    if (token == null) {
+      if (mounted) setState(() {
+        _connection = 'Não autenticado';
+        _loadingDashboard = false;
+        _apiChildren.clear();
+        _apiAlerts.clear();
+      });
+      return;
+    }
     try {
       final snapshot = await ApiService.fetchDashboard();
-      if (!mounted) return;
+      if (!mounted || ApiService.accessToken != token) return;
       setState(() {
-        _apiChildren
-          ..clear()
-          ..addAll(snapshot.children.isNotEmpty ? snapshot.children : _demoChildren());
-        _apiAlerts
-          ..clear()
-          ..addAll(snapshot.alerts.isNotEmpty ? snapshot.alerts : _demoAlerts());
+        _apiChildren..clear()..addAll(snapshot.children);
+        _apiAlerts..clear()..addAll(snapshot.alerts);
         _loadingDashboard = false;
-        if (_apiChildren.isEmpty) {
-          _apiChildren.addAll(_demoChildren());
-        }
-        if (_apiAlerts.isEmpty) {
-          _apiAlerts.addAll(_demoAlerts());
-        }
+        _connection = 'API conectada';
       });
-    } catch (_) {
-      if (!mounted) return;
+    } catch (failure) {
+      if (!mounted || ApiService.accessToken != token) return;
+      final expired = failure is ApiRequestException && failure.status == 401;
+      if (expired) {
+        try { await ApiService.clearSession(); } catch (_) {}
+        if (!mounted || ApiService.accessToken != null) return;
+      }
       setState(() {
-        _apiChildren
-          ..clear()
-          ..addAll(_demoChildren());
-        _apiAlerts
-          ..clear()
-          ..addAll(_demoAlerts());
+        if (expired) {
+          _apiChildren.clear();
+          _apiAlerts.clear();
+        }
         _loadingDashboard = false;
+        _connection = expired ? 'Sessão expirada. Entre novamente.' : 'API indisponível';
       });
     }
+  }
+
+  Future<void> _loginDialog() async {
+    final formKey = GlobalKey<FormState>();
+    final emailPattern = RegExp(r'^\S+@\S+\.\S+$');
+    var email = '';
+    var password = '';
+    var submitting = false;
+    String? error;
+    final signedIn = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) {
+          Future<void> submit({required bool register}) async {
+            if (submitting || !formKey.currentState!.validate()) return;
+            setDialogState(() {
+              submitting = true;
+              error = null;
+            });
+            final submittedEmail = email.trim();
+            final submittedPassword = password.trim();
+            try {
+              if (register) {
+                await ApiService.register(submittedEmail, submittedPassword);
+              }
+              await ApiService.login(submittedEmail, submittedPassword);
+              if (dialogContext.mounted) Navigator.of(dialogContext).pop(true);
+            } catch (failure) {
+              if (!dialogContext.mounted) return;
+              setDialogState(() {
+                submitting = false;
+                error = switch (failure) {
+                  ApiRequestException(status: 401) =>
+                    'Confira o e-mail e a senha e tente entrar novamente.',
+                  ApiRequestException(message: 'Conta já cadastrada') =>
+                    'Este e-mail já está cadastrado. Toque em Entrar.',
+                  ApiRequestException(status: 400) =>
+                    'Confira o formato do e-mail e o tamanho da senha.',
+                  _ => 'Não foi possível acessar a API. Tente novamente.',
+                };
+              });
+            }
+          }
+
+          return PopScope(
+            canPop: !submitting,
+            child: AlertDialog(
+              title: const Text('Acesso do responsável'),
+              scrollable: true,
+              content: Form(
+                key: formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextFormField(
+                      enabled: !submitting,
+                      keyboardType: TextInputType.emailAddress,
+                      textInputAction: TextInputAction.next,
+                      decoration: const InputDecoration(labelText: 'E-mail'),
+                      onChanged: (value) => email = value,
+                      validator: (value) {
+                        final address = value?.trim() ?? '';
+                        if (address.length > 120 || !emailPattern.hasMatch(address)) {
+                          return 'Informe um e-mail válido.';
+                        }
+                        return null;
+                      },
+                    ),
+                    TextFormField(
+                      enabled: !submitting,
+                      obscureText: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Senha (mínimo 12 caracteres)',
+                      ),
+                      onChanged: (value) => password = value,
+                      validator: (value) {
+                        final size = (value ?? '').trim().length;
+                        if (size < 12 || size > 256) {
+                          return 'Use de 12 a 256 caracteres.';
+                        }
+                        return null;
+                      },
+                    ),
+                    if (error != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: Text(
+                          error!,
+                          style: TextStyle(color: Theme.of(dialogContext).colorScheme.error),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: submitting ? null : () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Cancelar'),
+                ),
+                TextButton(
+                  onPressed: submitting ? null : () => submit(register: true),
+                  child: const Text('Cadastrar'),
+                ),
+                FilledButton(
+                  onPressed: submitting ? null : () => submit(register: false),
+                  child: Text(submitting ? 'Aguarde…' : 'Entrar'),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+    if (signedIn == true && mounted) await _loadDashboard();
   }
 
   void _analyze() {
@@ -154,6 +234,123 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  Future<void> _showProfile() async {
+    if (ApiService.accessToken == null) {
+      await _loginDialog();
+      if (!mounted || ApiService.accessToken == null) return;
+    }
+    try {
+      final email = await ApiService.profileEmail();
+      if (mounted) await _showInfo('Perfil parental', 'E-mail cadastrado\n$email');
+    } catch (_) {
+      if (mounted) {
+        await _showInfo('Perfil parental', 'Não foi possível consultar o perfil. Confira a conexão e entre novamente se a sessão expirou.');
+      }
+    }
+  }
+
+  Future<void> _showPrivacy() => _showInfo(
+    'Privacidade e transparência',
+    'Versão de teste para contas e perfis fictícios. O Guardian Pais usa a '
+    'internet para acessar a conta, os perfis e os alertas da família. No '
+    'Guardian Pais, o responsável escolhe as fontes. No Kids, a análise é ativada com o '
+    'aviso do Android visível. A pausa pelo Kids exige a senha do responsável.\n\n'
+    'A prévia é analisada no aparelho. A API recebe o identificador do perfil, '
+    'categoria, gravidade, horário e origem do alerta. O servidor de teste '
+    'guarda os dados até a limpeza administrativa. Alertas são sinais a verificar. '
+    'Para dúvidas ou remoção de registros de teste, fale com a equipe responsável pelo teste.',
+  );
+
+  Future<void> _showPermissions() => _showInfo(
+    'Permissões',
+    'Guardian Pais usa a conexão com a internet para entrar, criar perfis, '
+    'parear dispositivos e consultar alertas no painel.\n\n'
+    'No Android da criança, abra Guardian Kids → Configurações → Proteção de '
+    'notificações para consultar as fontes escolhidas no Pais, autorizar o acesso do Android, '
+    'permitir o aviso visível de proteção ativa ou pausar a análise.',
+  );
+
+  Future<void> _confirmClearSession() async {
+    if (ApiService.accessToken == null) {
+      await _loginDialog();
+      if (!mounted || ApiService.accessToken == null) return;
+    }
+    var password = '';
+    var confirming = false;
+    String? error;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => PopScope(
+          canPop: !confirming,
+          child: AlertDialog(
+            title: const Text('Confirmar exclusão local'),
+            scrollable: true,
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Confirme com a senha do responsável para apagar a demonstração '
+                  'deste aparelho. Contas, perfis e alertas da API continuam disponíveis.',
+                ),
+                TextField(
+                  enabled: !confirming,
+                  obscureText: true,
+                  decoration: InputDecoration(labelText: 'Senha do responsável', errorText: error),
+                  onChanged: (value) => password = value,
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: confirming ? null : () => Navigator.pop(dialogContext),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton(
+                onPressed: confirming ? null : () async {
+                  if (password.trim().isEmpty) {
+                    setDialogState(() => error = 'Informe a senha.');
+                    return;
+                  }
+                  setDialogState(() {
+                    confirming = true;
+                    error = null;
+                  });
+                  try {
+                    await ApiService.confirmPassword(password.trim());
+                    if (dialogContext.mounted) Navigator.pop(dialogContext, true);
+                  } catch (failure) {
+                    if (!dialogContext.mounted) return;
+                    setDialogState(() {
+                      confirming = false;
+                      error = failure is ApiRequestException && failure.status == 401
+                          ? 'Senha incorreta ou sessão expirada.'
+                          : 'Não foi possível confirmar com a API.';
+                    });
+                  }
+                },
+                child: Text(confirming ? 'Aguarde…' : 'Confirmar exclusão'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() {
+      _hasResult = false;
+      _hasRisk = false;
+      _migration = false;
+      _contested = false;
+      _riskLevel = 'Sem análise';
+      _result = 'Nenhuma mensagem fictícia analisada nesta sessão.';
+      _showDemoAlert = false;
+      _controller.clear();
+    });
+    await _showInfo('Dados locais apagados', 'A demonstração desta sessão foi limpa.');
+  }
+
   Future<void> _showSafetyGuidanceDialog() async {
     await showDialog<void>(
       context: context,
@@ -171,35 +368,149 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _showPairingDialog() async {
-    await showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Pareamento futuro'),
-        content: const Text(
-          'Guilherme está vinculado ao app conforme a simulação atual. O pareamento real será concluído quando o backend de autenticação estiver conectado ao sistema.',
+    if (ApiService.accessToken == null) {
+      await _loginDialog();
+      return;
+    }
+    if (_apiChildren.isEmpty) {
+      await _showAddChildDialog();
+      return;
+    }
+    final available = _apiChildren.where((child) => child.status == 'pending').toList();
+    if (available.isEmpty) {
+      await _showInfo('Perfis vinculados', 'Todos os perfis já têm um dispositivo vinculado.');
+      return;
+    }
+    final child = available.length == 1
+        ? available.single
+        : await showDialog<ApiChild>(
+            context: context,
+            builder: (dialogContext) => SimpleDialog(
+              title: const Text('Qual perfil você quer vincular?'),
+              children: [
+                for (final profile in available)
+                  SimpleDialogOption(
+                    onPressed: () => Navigator.pop(dialogContext, profile),
+                    child: Text(profile.name),
+                  ),
+              ],
+            ),
+          );
+    if (child == null || !mounted) return;
+    try {
+      final code = await ApiService.createPairing(child.id);
+      if (!mounted) return;
+      var copied = false;
+      String? copyError;
+      await showDialog<void>(
+        context: context,
+        builder: (context) => StatefulBuilder(
+          builder: (dialogContext, setDialogState) => AlertDialog(
+            title: const Text('Código de pareamento'),
+            scrollable: true,
+            content: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('Perfil: ${child.name}'),
+                const SizedBox(height: 12),
+                SelectableText(code),
+                const SizedBox(height: 12),
+                const Text('Cole no Guardian Kids. Válido por 5 minutos e para um único uso.'),
+                if (copyError != null) Text(copyError!),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Fechar'),
+              ),
+              FilledButton.icon(
+                onPressed: () async {
+                  try {
+                    await Clipboard.setData(ClipboardData(text: code));
+                    if (!dialogContext.mounted) return;
+                    setDialogState(() {
+                      copied = true;
+                      copyError = null;
+                    });
+                  } on PlatformException {
+                    if (dialogContext.mounted) {
+                      setDialogState(() => copyError = 'Selecione o código e copie manualmente.');
+                    }
+                  }
+                },
+                icon: Icon(copied ? Icons.check : Icons.copy),
+                label: Text(copied ? 'Código copiado' : 'Copiar código'),
+              ),
+            ],
+          ),
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Entendi')),
-        ],
-      ),
-    );
+      );
+    } catch (error) {
+      if (mounted) await _showInfo('Não foi possível parear', '$error');
+    }
   }
 
   Future<void> _showAddChildDialog() async {
-    await showDialog<void>(
+    if (ApiService.accessToken == null) {
+      await _loginDialog();
+      return;
+    }
+    final formKey = GlobalKey<FormState>();
+    var name = '';
+    var ageGroup = '11-13';
+    final child = await showDialog<({String name, String ageGroup})>(
       context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Adicionar criança'),
-        content: const Text(
-          'Neste cenário demonstrativo, Guilherme já está vinculado. Os dados visuais foram atualizados para refletir o cadastro ativo do filho.',
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Cadastrar perfil infantil'),
+        scrollable: true,
+        content: Form(
+          key: formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                decoration: const InputDecoration(labelText: 'Nome (fictício no teste)'),
+                onChanged: (value) => name = value.trim(),
+                validator: (_) => name.isEmpty || name.length > 80
+                    ? 'Informe um nome de até 80 caracteres.'
+                    : null,
+              ),
+              TextFormField(
+                initialValue: '11-13',
+                decoration: const InputDecoration(labelText: 'Faixa etária'),
+                onChanged: (value) => ageGroup = value.trim(),
+                validator: (_) => ageGroup.isEmpty || ageGroup.length > 20
+                    ? 'Informe uma faixa etária de até 20 caracteres.'
+                    : null,
+              ),
+            ],
+          ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Entendi')),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (formKey.currentState!.validate()) {
+                Navigator.pop(dialogContext, (name: name, ageGroup: ageGroup));
+              }
+            },
+            child: const Text('Criar'),
+          ),
         ],
       ),
     );
+    if (child == null || !mounted) return;
+    try {
+      await ApiService.addChild(child.name, child.ageGroup);
+      await _loadDashboard();
+    } catch (error) {
+      if (mounted) await _showInfo('Falha ao cadastrar', '$error');
+    }
   }
 
   void _triggerDemoAlert() {
@@ -214,10 +525,12 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     _loadDashboard();
+    _refreshTimer = Timer.periodic(const Duration(seconds: 15), (_) => _loadDashboard());
   }
 
   @override
   void dispose() {
+    _refreshTimer?.cancel();
     _controller.dispose();
     super.dispose();
   }
@@ -279,7 +592,15 @@ class _HomePageState extends State<HomePage> {
               title: const Text('Perfil'),
               onTap: () {
                 Navigator.pop(context);
-                _showInfo('Perfil', 'A edição do perfil parental será habilitada após a integração com o backend.');
+                _showProfile();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.verified_user_outlined, color: navy),
+              title: const Text('Autorizações'),
+              onTap: () {
+                Navigator.pop(context);
+                _showAuthorizations();
               },
             ),
             ListTile(
@@ -287,10 +608,7 @@ class _HomePageState extends State<HomePage> {
               title: const Text('Privacidade'),
               onTap: () {
                 Navigator.pop(context);
-                _showInfo(
-                  'Privacidade',
-                  'O protótipo não acessa conversas de outros aplicativos e não envia textos para servidores.',
-                );
+                _showPrivacy();
               },
             ),
             ListTile(
@@ -307,9 +625,16 @@ class _HomePageState extends State<HomePage> {
             ListTile(
               leading: const Icon(Icons.logout_rounded, color: Color(0xFF12356B)),
               title: const Text('Sair'),
-              onTap: () {
+              onTap: () async {
                 Navigator.pop(context);
-                _showInfo('Sair', 'Este protótipo não encerra sessão real, apenas demonstra a ação visual de saída.');
+                try {
+                  await ApiService.logout();
+                } catch (_) {
+                  // O token local é descartado mesmo em falhas de rede.
+                }
+                if (!mounted) return;
+                await _loadDashboard();
+                if (mounted) await _showInfo('Sessão encerrada', 'O token local foi descartado. A API invalida a sessão quando está acessível.');
               },
             ),
           ],
@@ -320,11 +645,7 @@ class _HomePageState extends State<HomePage> {
           index: _selectedTab,
           children: [
             _home(),
-            _simplePage(
-              'Perfis infantis',
-              Icons.people_alt_outlined,
-              'Cadastre e vincule os dispositivos das crianças quando o backend de pareamento estiver disponível.',
-            ),
+            _childrenPage(),
             _alertsPage(),
             _plansPage(),
             _settingsPage(),
@@ -355,6 +676,8 @@ class _HomePageState extends State<HomePage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _header(),
+            ListTile(title: Text(_connection), subtitle: const Text('Nenhum dado demonstrativo substitui respostas da API'),
+              trailing: IconButton(icon: const Icon(Icons.login), onPressed: _loginDialog)),
             const SizedBox(height: 20),
             _onboardingCard(),
             const SizedBox(height: 16),
@@ -369,42 +692,14 @@ class _HomePageState extends State<HomePage> {
                 ),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: _metric(Icons.people_outline, '${_apiChildren.length}', 'Crianças vinculadas', green),
+                  child: _metric(Icons.people_outline, '${_apiChildren.length}', 'Perfis cadastrados', green),
                 ),
               ],
             ),
             const SizedBox(height: 24),
             _section('Seus filhos', 'Adicionar criança', _showAddChildDialog),
             const SizedBox(height: 10),
-            _surface(
-              child: Row(
-                children: [
-                  _circleIcon(Icons.person_rounded, const Color(0xFFE6F0FF), blue),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _apiChildren.isNotEmpty ? _apiChildren.first.name : 'Guilherme',
-                          style: const TextStyle(fontWeight: FontWeight.w700, color: navy),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          _apiChildren.isNotEmpty ? 'Faixa etária: ${_apiChildren.first.ageGroup}' : 'Faixa etária: 11-13',
-                          style: const TextStyle(color: muted, fontSize: 12),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Chip(
-                    label: const Text('Vinculada'),
-                    backgroundColor: const Color(0xFFE7F8F1),
-                    labelStyle: const TextStyle(color: Color(0xFF159768)),
-                  ),
-                ],
-              ),
-            ),
+            ..._childCards(),
             const SizedBox(height: 24),
             _section('Alertas e orientações', 'Ver todos', _navigateToAlerts),
             const SizedBox(height: 10),
@@ -468,10 +763,7 @@ class _HomePageState extends State<HomePage> {
                     'Privacidade',
                     const Color(0xFFE7F8F1),
                     const Color(0xFF159768),
-                    () => _showInfo(
-                      'Privacidade',
-                      'O protótipo não acessa conversas de outros apps e não envia textos para servidores.',
-                    ),
+                    _showPrivacy,
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -659,7 +951,12 @@ class _HomePageState extends State<HomePage> {
         ),
       );
 
-  Widget _apiAlertCard(ApiAlert alert) => Container(
+  Widget _apiAlertCard(ApiAlert alert) {
+    final childName = _apiChildren
+        .where((child) => child.id == alert.childId)
+        .map((child) => child.name)
+        .firstOrNull;
+    return Container(
         width: double.infinity,
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
@@ -684,12 +981,20 @@ class _HomePageState extends State<HomePage> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Categoria: ${alert.category} • Severidade: ${alert.severity}',
+              '${alert.originLabel}\n'
+              '${childName == null ? '' : '$childName · '}Nível: ${alert.severity}\n'
+              '${alert.occurredAt} · Sinal a verificar com a criança',
               style: const TextStyle(fontSize: 12, color: muted),
             ),
+            TextButton(onPressed: alert.contested ? null : () async {
+              try { await ApiService.contest(alert.id); await _loadDashboard(); }
+              catch(e) { if (mounted) await _showInfo('Falha ao contestar', '$e'); }
+            }, child: Text(alert.contested ? 'Alerta contestado' : 'Contestar alerta')),
           ],
         ),
       );
+
+  }
 
   Widget _metric(IconData icon, String value, String label, Color color) => _surface(
         padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 7),
@@ -767,35 +1072,164 @@ class _HomePageState extends State<HomePage> {
         child: Icon(icon, color: fg, size: 27),
       );
 
-  Widget _simplePage(String title, IconData icon, String message) => SingleChildScrollView(
+  Future<void> _showAuthorizations() async {
+    if (ApiService.accessToken == null) {
+      await _loginDialog();
+      if (!mounted || ApiService.accessToken == null) return;
+    }
+    await _loadDashboard();
+    if (!mounted) return;
+    if (_connection != 'API conectada' || _apiChildren.isEmpty) {
+      await _showInfo('Autorizações', _connection == 'API conectada'
+          ? 'Cadastre um perfil infantil para escolher os aplicativos autorizados.'
+          : 'Conecte-se à API para consultar as autorizações.');
+      return;
+    }
+    final child = await showDialog<ApiChild>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: const Text('Autorizações'),
+        children: [
+          for (final profile in _apiChildren)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(dialogContext, profile),
+              child: Text('${profile.name} · ${profile.protectionSources.length} app(s) autorizado(s)'),
+            ),
+        ],
+      ),
+    );
+    if (child != null && mounted) await _editChildProtection(child);
+  }
+
+  Future<void> _editChildProtection(ApiChild child) async {
+    final selected = child.protectionSources.toSet();
+    const applications = {
+      'com.whatsapp': 'WhatsApp',
+      'com.discord': 'Discord',
+      'org.telegram.messenger': 'Telegram',
+      'com.roblox.client': 'Roblox',
+    };
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (dialogContext, update) => AlertDialog(
+          title: Text('Proteção de ${child.name}'),
+          scrollable: true,
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Alterações pausam a análise assim que o Kids recebe a nova lista. Revise e ative novamente no Kids.'),
+              for (final entry in applications.entries)
+                CheckboxListTile(
+                  title: Text(entry.value),
+                  value: selected.contains(entry.key),
+                  onChanged: (checked) => update(() {
+                    if (checked == true) {
+                      selected.add(entry.key);
+                    } else {
+                      selected.remove(entry.key);
+                    }
+                  }),
+                ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancelar')),
+            FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Salvar proteção')),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await ApiService.setProtectionSources(child.id, selected);
+      await _loadDashboard();
+    } catch (_) {
+      if (mounted) await _showInfo('Proteção', 'Não foi possível salvar os aplicativos.');
+    }
+  }
+
+  String _reportedStatus(ApiChild child) {
+    final state = child.protectionLabel(DateTime.now());
+    final time = child.reportedAt?.toLocal();
+    if (time == null) return 'Proteção · $state';
+    final hour = time.hour.toString().padLeft(2, '0');
+    final minute = time.minute.toString().padLeft(2, '0');
+    final day = time.day.toString().padLeft(2, '0');
+    final month = time.month.toString().padLeft(2, '0');
+    return 'Proteção · $state\nÚltimo contato $day/$month às $hour:$minute';
+  }
+
+  List<Widget> _childCards({bool editable = false}) {
+    if (_apiChildren.isEmpty) {
+      final message = switch (_connection) {
+        'API conectada' => 'Nenhuma criança cadastrada',
+        'API indisponível' => 'Não foi possível consultar os perfis.',
+        _ => 'Entre para ver os perfis da família.',
+      };
+      return [_surface(child: Text(message))];
+    }
+    return [
+      for (final child in _apiChildren)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: _surface(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              children: [
+                _circleIcon(Icons.person_rounded, const Color(0xFFE6F0FF), blue),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(child.name, style: const TextStyle(fontWeight: FontWeight.w700, color: navy)),
+                      Text('Faixa etária: ${child.ageGroup}', style: const TextStyle(color: muted)),
+                      Text(
+                        child.status == 'linked' ? 'Dispositivo vinculado' : 'Aguardando pareamento',
+                        style: const TextStyle(color: muted),
+                      ),
+                      if (child.status == 'linked')
+                        Text(_reportedStatus(child), style: const TextStyle(color: navy)),
+                      if (editable)
+                        TextButton(
+                          onPressed: () => _editChildProtection(child),
+                          child: const Text('Configurar proteção'),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+    ];
+  }
+
+  Widget _childrenPage() => SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              title,
-              style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: navy),
+            const Text(
+              'Perfis infantis',
+              style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: navy),
             ),
-            const SizedBox(height: 20),
-            _surface(
-              child: Column(
-                children: [
-                  Icon(icon, size: 52, color: blue),
-                  const SizedBox(height: 14),
-                  Text(
-                    message,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: muted, height: 1.5),
-                  ),
-                  const SizedBox(height: 16),
-                  FilledButton.icon(
-                    onPressed: _showPairingDialog,
-                    icon: const Icon(Icons.add),
-                    label: const Text('Adicionar criança'),
-                  ),
-                ],
-              ),
+            if (_connection == 'API conectada')
+              Text('${_apiChildren.length} cadastrados · ${_apiChildren.where((child) => child.status == 'linked').length} vinculados'),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: _showAddChildDialog,
+              icon: const Icon(Icons.add),
+              label: const Text('Adicionar criança'),
             ),
+            TextButton.icon(
+              onPressed: _showPairingDialog,
+              icon: const Icon(Icons.link),
+              label: const Text('Gerar código de pareamento'),
+            ),
+            const SizedBox(height: 12),
+            ..._childCards(editable: true),
           ],
         ),
       );
@@ -810,10 +1244,10 @@ class _HomePageState extends State<HomePage> {
               style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: navy),
             ),
             const SizedBox(height: 6),
-            const Text(
-              'Exemplos e análises locais desta sessão',
-              style: TextStyle(color: muted),
-            ),
+            Text(
+              'Alertas da família autenticada • $_connection',
+              style: const TextStyle(color: muted),
+          ),
             const SizedBox(height: 18),
             if (_showDemoAlert)
               _demoAlertCard()
@@ -823,7 +1257,7 @@ class _HomePageState extends State<HomePage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Nenhum alerta demonstrativo selecionado.',
+                      'Demonstração separada dos alertas da API.',
                       style: TextStyle(color: navy, fontWeight: FontWeight.w700),
                     ),
                     const SizedBox(height: 8),
@@ -836,6 +1270,8 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
             const SizedBox(height: 14),
+            for (final alert in _apiAlerts) Padding(
+              padding: const EdgeInsets.only(bottom: 10), child: _apiAlertCard(alert)),
             if (_hasResult)
               _surface(
                 child: Column(
@@ -897,17 +1333,17 @@ class _HomePageState extends State<HomePage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'Plano Família • cenário-base',
+                    'Plano Família',
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: navy),
                   ),
                   const SizedBox(height: 10),
                   const Text(
-                    'R\$ 59,00/mês',
+                    'R\$ 45,00/mês',
                     style: TextStyle(fontSize: 30, fontWeight: FontWeight.w800, color: blue),
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    'Preço hipotético, ainda não validado. Nenhuma cobrança será realizada.',
+                    'Fidelidade de 12 meses. São 12 mensalidades de R\$ 45,00, totalizando R\$ 540,00 por família. A simulação não realiza cobranças.',
                     style: TextStyle(color: muted, height: 1.5),
                   ),
                   const SizedBox(height: 16),
@@ -944,20 +1380,19 @@ class _HomePageState extends State<HomePage> {
                   _settingsTile(
                     Icons.privacy_tip_outlined,
                     'Privacidade e transparência',
-                    'O protótipo não acessa conversas de outros aplicativos.',
+                    _showPrivacy,
                   ),
                   const Divider(),
                   _settingsTile(
                     Icons.lock_outline,
                     'Permissões',
-                    'Nenhuma permissão especial de monitoramento está ativada.',
+                    _showPermissions,
                   ),
                   const Divider(),
                   _settingsTile(
                     Icons.delete_outline,
                     'Excluir dados da sessão',
-                    'Apagar a análise temporária desta demonstração.',
-                    clear: true,
+                    _confirmClearSession,
                   ),
                 ],
               ),
@@ -966,30 +1401,14 @@ class _HomePageState extends State<HomePage> {
         ),
       );
 
-  Widget _settingsTile(IconData icon, String title, String detail, {bool clear = false}) => Material(
+  Widget _settingsTile(IconData icon, String title, VoidCallback onTap) => Material(
         color: Colors.transparent,
         child: ListTile(
           contentPadding: EdgeInsets.zero,
           leading: Icon(icon, color: blue),
           title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700, color: navy)),
           trailing: const Icon(Icons.chevron_right),
-          onTap: () {
-            if (clear) {
-              setState(() {
-                _hasResult = false;
-                _hasRisk = false;
-                _migration = false;
-                _contested = false;
-                _riskLevel = 'Sem análise';
-                _result = 'Nenhuma mensagem fictícia analisada nesta sessão.';
-                _showDemoAlert = false;
-                _controller.clear();
-              });
-              _showInfo('Dados locais apagados', 'O resultado temporário desta sessão foi limpo.');
-            } else {
-              _showInfo(title, detail);
-            }
-          },
+          onTap: onTap,
         ),
       );
 

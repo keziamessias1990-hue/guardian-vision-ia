@@ -8,3 +8,5 @@ build/
 .vscode/*.log
 *.iml
 .DS_Store
+backend/data/
+backend/evidence-integration.json
