@@ -100,9 +100,9 @@ function adbTools(adb) {
       const avd = process.env.GUARDIAN_AVD ?? (avds.length === 1 ? avds[0] : undefined);
       if (!avd) throw new Error('Abra ou crie um emulador no Device Manager. Se houver vários, abra o desejado.');
       const log = fs.openSync(path.join(runDir, 'emulador.log'), 'a');
-      const process = spawn(emulator, ['-avd', avd], { detached: true, stdio: ['ignore', log, log] });
-      process.on('error', error => console.error(error.message));
-      process.unref();
+      const emulatorProcess = spawn(emulator, ['-avd', avd], { detached: true, stdio: ['ignore', log, log] });
+      emulatorProcess.on('error', error => console.error(error.message));
+      emulatorProcess.unref();
       fs.closeSync(log);
     }
     say('Aguardando o emulador Android…');
