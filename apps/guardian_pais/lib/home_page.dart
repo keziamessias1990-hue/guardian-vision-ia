@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -677,7 +678,7 @@ class _HomePageState extends State<HomePage> {
           children: [
             _header(),
             ListTile(title: Text(_connection), subtitle: const Text('Nenhum dado demonstrativo substitui respostas da API'),
-              trailing: IconButton(icon: const Icon(Icons.login), onPressed: _loginDialog)),
+              trailing: IconButton(icon: const Icon(Icons.login), tooltip: 'Acessar conta', onPressed: _loginDialog)),
             const SizedBox(height: 20),
             _onboardingCard(),
             const SizedBox(height: 16),
@@ -1108,6 +1109,8 @@ class _HomePageState extends State<HomePage> {
       'com.discord': 'Discord',
       'org.telegram.messenger': 'Telegram',
       'com.roblox.client': 'Roblox',
+      if (kDebugMode && bool.fromEnvironment('GUARDIAN_ENABLE_NOTIFICATION_FIXTURE'))
+        'com.example.guardian_notification_fixture': 'Emissor de teste',
     };
     final confirmed = await showDialog<bool>(
       context: context,

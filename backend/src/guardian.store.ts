@@ -23,6 +23,9 @@ const hash = (v: string) => createHash('sha256').update(v).digest('hex');
 const protectionSources = new Set([
   'com.whatsapp', 'com.discord', 'org.telegram.messenger', 'com.roblox.client',
 ]);
+if (process.env.GUARDIAN_TEST_FIXTURE === '1') {
+  protectionSources.add('com.example.guardian_notification_fixture');
+}
 const pairingAlphabet = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
 const shortPairingCode = () => Array.from(
   { length: 8 }, () => pairingAlphabet[randomInt(pairingAlphabet.length)],

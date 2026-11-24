@@ -4,6 +4,8 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+val guardianTestSuffix = providers.gradleProperty("guardianTestSuffix").orNull
+
 android {
     namespace = "com.example.guardian_kids"
     compileSdk = flutter.compileSdkVersion
@@ -30,6 +32,11 @@ android {
     }
 
     buildTypes {
+        getByName("debug") {
+            if (guardianTestSuffix == "teste" || guardianTestSuffix == "e2e") {
+                applicationIdSuffix = ".$guardianTestSuffix"
+            }
+        }
         release {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.

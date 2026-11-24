@@ -1,0 +1,8 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.example.guardian_notification_fixture">
+    <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="35" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <application android:label="Emissor Guardian de teste">
+        <activity android:name=".ProbeActivity" android:exported="true" />
+    </application>
+</manifest>

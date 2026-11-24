@@ -1,6 +1,10 @@
 # Guardian Vision IA — Sprint 0
 
-Monorepositório inicial: **Guardian Pais** e **Guardian Kids** (Flutter), API **NestJS** e espaço para painel administrativo. Apenas dados fictícios; não há monitoramento real, pagamentos ou tratamento de conversas de terceiros.
+Monorepositório do Guardian Pais, do Guardian Kids e da API NestJS. Esta versão de testes usa contas e mensagens fictícias.
+
+## Executar com um comando
+
+Abra um terminal na raiz do projeto, no Windows ou no macOS, e execute `node scripts/testar-guardian.cjs`. Para validar o fluxo completo com uma notificação fictícia no Android, use `node scripts/testar-guardian.cjs --e2e`. [Preparação e modos de teste](scripts/README.md)
 
 ## Pré-requisitos
 - Flutter SDK estável instalado e no PATH (`flutter doctor`)
@@ -70,24 +74,9 @@ flutter test
 flutter run
 ```
 
-## 4. Gerar as pastas nativas dos aplicativos
-O SDK Flutter gera os projetos Android/iOS no seu computador. Os arquivos `lib/` já estão preparados. **Execute uma vez em cada pasta**:
+## 4. Configurações nativas
 
-```bash
-cd apps/guardian_pais
-flutter create --platforms=android,ios --project-name guardian_pais .
-flutter pub get
-flutter run
-```
-
-Em outro terminal:
-
-```bash
-cd apps/guardian_kids
-flutter create --platforms=android,ios --project-name guardian_kids .
-flutter pub get
-flutter run
-```
+As pastas nativas estão no repositório e contêm a implementação Android do agente e do armazenamento seguro.
 
 Se quiser escolher o dispositivo manualmente:
 
